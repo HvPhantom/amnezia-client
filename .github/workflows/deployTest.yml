@@ -1,0 +1,106 @@
+name: 'Deploy workflow'
+
+on:
+  push:
+    branches:
+      - '**'
+
+env:
+  QT_MIRROR: https://mirrors.ocf.berkeley.edu/qt/ # https://download.qt.io/static/mirrorlist/
+
+jobs:
+  Build-iOS:
+    runs-on: macos-13
+
+    env:
+      QT_VERSION: 6.6.2
+      CC: cc
+      CXX: c++
+      PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
+      PROD_S3_ENDPOINT: ${{ secrets.PROD_S3_ENDPOINT }}
+      DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
+      DEV_AGW_ENDPOINT: ${{ secrets.DEV_AGW_ENDPOINT }}
+      DEV_S3_ENDPOINT: ${{ secrets.DEV_S3_ENDPOINT }}
+      FREE_V2_ENDPOINT: ${{ secrets.FREE_V2_ENDPOINT }}
+      PREM_V1_ENDPOINT: ${{ secrets.PREM_V1_ENDPOINT }}
+
+    steps:
+    - name: 'Setup xcode'
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '15.2'
+
+    - name: 'Install desktop Qt'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: 'mac'
+        target: 'desktop'
+        modules: 'qtremoteobjects qt5compat qtshadertools qtmultimedia'
+        arch: 'clang_64'
+        dir: ${{ runner.temp }}
+        set-env: 'true'
+        extra: '--base ${{ env.QT_MIRROR }}'
+
+    - name: 'Install iOS Qt'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: 'mac'
+        target: 'ios'
+        modules: 'qtremoteobjects qt5compat qtshadertools qtmultimedia'
+        dir: ${{ runner.temp }}
+        setup-python: 'true'
+        set-env: 'true'
+        extra: '--external 7z --base ${{ env.QT_MIRROR }}'
+
+    - name: 'Install go'
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: false
+
+    - name: 'Setup gomobile'
+      run: |
+          export PATH=$PATH:~/go/bin
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+    - name: 'Get sources'
+      uses: actions/checkout@v4
+      with:
+        submodules: 'true'
+        fetch-depth: 10
+
+    - name: 'Setup ccache'
+      uses: hendrikmuhs/ccache-action@v1.2
+
+    - name: 'Install dependencies'
+      run: pip install jsonschema jinja2
+
+    - name: 'Build unsigned iOS .ipa'
+      run: |
+        export QT_BIN_DIR="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/ios/bin"
+        export QT_MACOS_ROOT_DIR="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/macos"
+        export PATH=$PATH:~/go/bin
+        mkdir -p build-ios
+        $QT_BIN_DIR/qt-cmake . -B build-ios -GXcode -DQT_HOST_PATH=$QT_MACOS_ROOT_DIR
+        xcodebuild -project build-ios/AmneziaVPN.xcodeproj \
+          -scheme AmneziaVPN \
+          -configuration Release \
+          -sdk iphoneos \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          DEVELOPMENT_TEAM="" \
+          PROVISIONING_PROFILE_SPECIFIER=""
+        mkdir -p Payload
+        cp -R build-ios/client/Release-iphoneos/AmneziaVPN.app Payload/
+        zip -r AmneziaVPN-unsigned.ipa Payload
+    - name: 'Upload app .ipa to artifacts'
+      uses: actions/upload-artifact@v4
+      with:
+        name: AmneziaVPN-unsigned
+        path: |
+          ${{ github.workspace }}/AmneziaVPN-unsigned.ipa
+#        retention-days: 7
