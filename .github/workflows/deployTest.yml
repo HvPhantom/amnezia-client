@@ -16,13 +16,6 @@ jobs:
       QT_VERSION: 6.6.2
       CC: cc
       CXX: c++
-      PROD_AGW_PUBLIC_KEY: ${{ secrets.PROD_AGW_PUBLIC_KEY }}
-      PROD_S3_ENDPOINT: ${{ secrets.PROD_S3_ENDPOINT }}
-      DEV_AGW_PUBLIC_KEY: ${{ secrets.DEV_AGW_PUBLIC_KEY }}
-      DEV_AGW_ENDPOINT: ${{ secrets.DEV_AGW_ENDPOINT }}
-      DEV_S3_ENDPOINT: ${{ secrets.DEV_S3_ENDPOINT }}
-      FREE_V2_ENDPOINT: ${{ secrets.FREE_V2_ENDPOINT }}
-      PREM_V1_ENDPOINT: ${{ secrets.PREM_V1_ENDPOINT }}
 
     steps:
     - name: 'Setup xcode'
@@ -78,29 +71,23 @@ jobs:
     - name: 'Install dependencies'
       run: pip install jsonschema jinja2
 
-    - name: 'Build unsigned iOS .ipa'
+    - name: 'Build project'
       run: |
+        git submodule update --init --recursive
         export QT_BIN_DIR="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/ios/bin"
         export QT_MACOS_ROOT_DIR="${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/macos"
+        export QT_IOS_BIN=$QT_BIN_DIR
         export PATH=$PATH:~/go/bin
         mkdir -p build-ios
-        $QT_BIN_DIR/qt-cmake . -B build-ios -GXcode -DQT_HOST_PATH=$QT_MACOS_ROOT_DIR
-        xcodebuild -project build-ios/AmneziaVPN.xcodeproj \
-          -scheme AmneziaVPN \
-          -configuration Release \
-          -sdk iphoneos \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          DEVELOPMENT_TEAM="" \
-          PROVISIONING_PROFILE_SPECIFIER=""
-        mkdir -p Payload
-        cp -R build-ios/client/Release-iphoneos/AmneziaVPN.app Payload/
-        zip -r AmneziaVPN-unsigned.ipa Payload
-    - name: 'Upload app .ipa to artifacts'
+        $QT_IOS_BIN/qt-cmake . -B build-ios -GXcode -DQT_HOST_PATH=$QT_MACOS_ROOT_DIR
+
+
+
+    - name: 'Upload appstore .ipa and dSYMs to artifacts'
       uses: actions/upload-artifact@v4
       with:
-        name: AmneziaVPN-unsigned
+        name: app-store ipa & dsyms
         path: |
-          ${{ github.workspace }}/AmneziaVPN-unsigned.ipa
-#        retention-days: 7
+          ${{ github.workspace }}/AmneziaVPN-iOS.ipa
+          ${{ github.workspace }}/*.app.dSYM.zip
+        retention-days: 7
