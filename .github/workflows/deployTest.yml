@@ -80,14 +80,31 @@ jobs:
         export PATH=$PATH:~/go/bin
         mkdir -p build-ios
         $QT_IOS_BIN/qt-cmake . -B build-ios -GXcode -DQT_HOST_PATH=$QT_MACOS_ROOT_DIR
-
-
+        xcodebuild clean build \
+          -configuration Release \
+          -scheme AmneziaVPN \
+          -destination "generic/platform=iOS,name=Any iOS'" \
+          -project build-ios/AmneziaVPN.xcodeproj \
+          CODE_SIGN_IDENTITY=""
+        echo
+        echo "Showing build-ios dir"
+        ls build-ios/
+        echo
+        echo "Showing build-ios/client dir"
+        ls build-ios/client/
+        echo
+        echo "Showing build-ios/client/Release-iphoneos/ dir"
+        ls build-ios/client/Release-iphoneos/
+        echo
+        mkdir -p Payload
+        cp -R build-ios/client/Release-iphoneos/AmneziaVPN.app Payload/
+        zip -r AmneziaVPN-unsigned.ipa Payload
 
     - name: 'Upload appstore .ipa and dSYMs to artifacts'
       uses: actions/upload-artifact@v4
       with:
-        name: app-store ipa & dsyms
+        name: app ipa & dsyms
         path: |
-          ${{ github.workspace }}/AmneziaVPN-iOS.ipa
+          ${{ github.workspace }}/AmneziaVPN-unsigned.ipa
           ${{ github.workspace }}/*.app.dSYM.zip
-        retention-days: 7
+        #retention-days: 7
